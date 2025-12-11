@@ -14,7 +14,7 @@ import { WellnessReminders } from './WellnessReminders';
 import { AmbientSoundPlayer } from './AmbientSoundPlayer';
 import { AIWellnessChat } from './AIWellnessChat';
 import { AIJournalAnalysis } from './AIJournalAnalysis';
-import api from '@/lib/api';
+
 
 type View = 'home' | 'calendar' | 'heal' | 'quests' | 'report' | 'journal';
 
@@ -30,6 +30,7 @@ interface CalendarEvent {
   id: string;
   title: string;
   time: string;
+  date: string;
   predictedMood: MoodType;
   tag: string;
 }
@@ -49,14 +50,6 @@ export function Dashboard() {
   });
 
   useEffect(() => {
-    if (user) {
-      api.get('/events').then((response) => {
-        setEvents(response.data);
-      });
-    }
-  }, [user]);
-
-  useEffect(() => {
     localStorage.setItem('questsCompleted', questsCompleted.toString());
   }, [questsCompleted]);
 
@@ -65,9 +58,9 @@ export function Dashboard() {
   }, [healSessions]);
 
   const addEvent = (event: Omit<CalendarEvent, 'id'>) => {
-    api.post('/events', event).then((response) => {
-      setEvents(prev => [...prev, response.data]);
-    });
+    // Events are now managed in CalendarView with Supabase
+    const newEvent = { ...event, id: Date.now().toString() };
+    setEvents(prev => [...prev, newEvent]);
   };
 
   const handleQuestComplete = () => {
