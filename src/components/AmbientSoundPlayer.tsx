@@ -13,17 +13,55 @@ interface SoundOption {
   name: string;
   icon: React.ElementType;
   color: string;
-  frequency: number; // Hz for generating ambient sound
 }
 
 const sounds: SoundOption[] = [
-  { id: 'rain', name: 'Rain', icon: Cloud, color: 'text-blue-400', frequency: 200 },
-  { id: 'ocean', name: 'Ocean', icon: Waves, color: 'text-cyan-400', frequency: 150 },
-  { id: 'wind', name: 'Wind', icon: Wind, color: 'text-slate-400', frequency: 100 },
-  { id: 'birds', name: 'Birds', icon: Bird, color: 'text-green-400', frequency: 800 },
-  { id: 'cafe', name: 'Café', icon: Coffee, color: 'text-amber-400', frequency: 300 },
-  { id: 'fire', name: 'Fire', icon: Flame, color: 'text-orange-400', frequency: 250 },
+  { id: 'rain', name: 'Rain', icon: Cloud, color: 'text-blue-400' },
+  { id: 'ocean', name: 'Ocean', icon: Waves, color: 'text-cyan-400' },
+  { id: 'wind', name: 'Wind', icon: Wind, color: 'text-slate-400' },
+  { id: 'birds', name: 'Birds', icon: Bird, color: 'text-green-400' },
+  { id: 'cafe', name: 'Café', icon: Coffee, color: 'text-amber-400' },
+  { id: 'fire', name: 'Fire', icon: Flame, color: 'text-orange-400' },
 ];
+
+// Create different noise types for more realistic sounds
+const createPinkNoise = (context: AudioContext, duration: number): AudioBuffer => {
+  const bufferSize = context.sampleRate * duration;
+  const buffer = context.createBuffer(1, bufferSize, context.sampleRate);
+  const data = buffer.getChannelData(0);
+  
+  let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+  
+  for (let i = 0; i < bufferSize; i++) {
+    const white = Math.random() * 2 - 1;
+    b0 = 0.99886 * b0 + white * 0.0555179;
+    b1 = 0.99332 * b1 + white * 0.0750759;
+    b2 = 0.96900 * b2 + white * 0.1538520;
+    b3 = 0.86650 * b3 + white * 0.3104856;
+    b4 = 0.55000 * b4 + white * 0.5329522;
+    b5 = -0.7616 * b5 - white * 0.0168980;
+    data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+    b6 = white * 0.115926;
+  }
+  
+  return buffer;
+};
+
+const createBrownNoise = (context: AudioContext, duration: number): AudioBuffer => {
+  const bufferSize = context.sampleRate * duration;
+  const buffer = context.createBuffer(1, bufferSize, context.sampleRate);
+  const data = buffer.getChannelData(0);
+  
+  let lastOut = 0;
+  for (let i = 0; i < bufferSize; i++) {
+    const white = Math.random() * 2 - 1;
+    data[i] = (lastOut + (0.02 * white)) / 1.02;
+    lastOut = data[i];
+    data[i] *= 3.5;
+  }
+  
+  return buffer;
+};
 
 export function AmbientSoundPlayer() {
   const [activeSound, setActiveSound] = useState<string | null>(null);
@@ -32,20 +70,25 @@ export function AmbientSoundPlayer() {
   const [isExpanded, setIsExpanded] = useState(false);
   
   const audioContextRef = useRef<AudioContext | null>(null);
-  const oscillatorRef = useRef<OscillatorNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
-  const noiseNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const sourceNodesRef = useRef<AudioBufferSourceNode[]>([]);
+  const oscillatorsRef = useRef<OscillatorNode[]>([]);
 
-  const createNoiseBuffer = (context: AudioContext) => {
-    const bufferSize = context.sampleRate * 2;
-    const buffer = context.createBuffer(1, bufferSize, context.sampleRate);
-    const data = buffer.getChannelData(0);
+  const stopSound = () => {
+    sourceNodesRef.current.forEach(node => {
+      try { node.stop(); } catch {}
+    });
+    oscillatorsRef.current.forEach(osc => {
+      try { osc.stop(); } catch {}
+    });
+    sourceNodesRef.current = [];
+    oscillatorsRef.current = [];
     
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
     }
-    
-    return buffer;
+    setIsPlaying(false);
   };
 
   const startSound = (soundId: string) => {
@@ -54,83 +97,285 @@ export function AmbientSoundPlayer() {
     const context = new AudioContext();
     audioContextRef.current = context;
     
-    const gainNode = context.createGain();
-    gainNode.gain.value = volume / 100 * 0.3;
-    gainNodeRef.current = gainNode;
-    
-    const sound = sounds.find(s => s.id === soundId);
-    if (!sound) return;
+    const masterGain = context.createGain();
+    masterGain.gain.value = volume / 100 * 0.4;
+    masterGain.connect(context.destination);
+    gainNodeRef.current = masterGain;
 
-    // Create noise-based ambient sound
-    const noiseBuffer = createNoiseBuffer(context);
-    const noiseNode = context.createBufferSource();
-    noiseNode.buffer = noiseBuffer;
-    noiseNode.loop = true;
-    noiseNodeRef.current = noiseNode;
-
-    // Create filter for different sound textures
-    const filter = context.createBiquadFilter();
-    
     switch (soundId) {
-      case 'rain':
-        filter.type = 'lowpass';
-        filter.frequency.value = 1000;
+      case 'rain': {
+        // Pink noise through lowpass for rain
+        const rainBuffer = createPinkNoise(context, 4);
+        const rainSource = context.createBufferSource();
+        rainSource.buffer = rainBuffer;
+        rainSource.loop = true;
+        
+        const lpf = context.createBiquadFilter();
+        lpf.type = 'lowpass';
+        lpf.frequency.value = 2500;
+        
+        const hpf = context.createBiquadFilter();
+        hpf.type = 'highpass';
+        hpf.frequency.value = 200;
+        
+        rainSource.connect(lpf);
+        lpf.connect(hpf);
+        hpf.connect(masterGain);
+        rainSource.start();
+        sourceNodesRef.current.push(rainSource);
+        
+        // Add subtle drops effect
+        const dropsBuffer = createPinkNoise(context, 2);
+        const dropsSource = context.createBufferSource();
+        dropsSource.buffer = dropsBuffer;
+        dropsSource.loop = true;
+        
+        const dropFilter = context.createBiquadFilter();
+        dropFilter.type = 'bandpass';
+        dropFilter.frequency.value = 4000;
+        dropFilter.Q.value = 2;
+        
+        const dropGain = context.createGain();
+        dropGain.gain.value = 0.15;
+        
+        dropsSource.connect(dropFilter);
+        dropFilter.connect(dropGain);
+        dropGain.connect(masterGain);
+        dropsSource.start();
+        sourceNodesRef.current.push(dropsSource);
         break;
-      case 'ocean':
-        filter.type = 'lowpass';
-        filter.frequency.value = 500;
-        // Add wave-like modulation
+      }
+      
+      case 'ocean': {
+        // Brown noise for deep ocean
+        const oceanBuffer = createBrownNoise(context, 4);
+        const oceanSource = context.createBufferSource();
+        oceanSource.buffer = oceanBuffer;
+        oceanSource.loop = true;
+        
+        const lpf = context.createBiquadFilter();
+        lpf.type = 'lowpass';
+        lpf.frequency.value = 800;
+        
+        // LFO for wave modulation
         const lfo = context.createOscillator();
-        lfo.frequency.value = 0.1;
+        lfo.frequency.value = 0.08;
         const lfoGain = context.createGain();
-        lfoGain.gain.value = 0.3;
+        lfoGain.gain.value = 0.25;
         lfo.connect(lfoGain);
-        lfoGain.connect(gainNode.gain);
+        lfoGain.connect(masterGain.gain);
         lfo.start();
+        oscillatorsRef.current.push(lfo);
+        
+        oceanSource.connect(lpf);
+        lpf.connect(masterGain);
+        oceanSource.start();
+        sourceNodesRef.current.push(oceanSource);
+        
+        // Higher frequency for foam
+        const foamBuffer = createPinkNoise(context, 3);
+        const foamSource = context.createBufferSource();
+        foamSource.buffer = foamBuffer;
+        foamSource.loop = true;
+        
+        const foamFilter = context.createBiquadFilter();
+        foamFilter.type = 'highpass';
+        foamFilter.frequency.value = 1500;
+        
+        const foamGain = context.createGain();
+        foamGain.gain.value = 0.1;
+        
+        foamSource.connect(foamFilter);
+        foamFilter.connect(foamGain);
+        foamGain.connect(masterGain);
+        foamSource.start();
+        sourceNodesRef.current.push(foamSource);
         break;
-      case 'wind':
-        filter.type = 'bandpass';
-        filter.frequency.value = 400;
-        filter.Q.value = 0.5;
+      }
+      
+      case 'wind': {
+        // Filtered noise with slow modulation
+        const windBuffer = createPinkNoise(context, 4);
+        const windSource = context.createBufferSource();
+        windSource.buffer = windBuffer;
+        windSource.loop = true;
+        
+        const bpf = context.createBiquadFilter();
+        bpf.type = 'bandpass';
+        bpf.frequency.value = 600;
+        bpf.Q.value = 0.8;
+        
+        // Slow modulation for gusts
+        const lfo = context.createOscillator();
+        lfo.frequency.value = 0.15;
+        const lfoGain = context.createGain();
+        lfoGain.gain.value = 300;
+        lfo.connect(lfoGain);
+        lfoGain.connect(bpf.frequency);
+        lfo.start();
+        oscillatorsRef.current.push(lfo);
+        
+        windSource.connect(bpf);
+        bpf.connect(masterGain);
+        windSource.start();
+        sourceNodesRef.current.push(windSource);
         break;
-      case 'birds':
-        filter.type = 'highpass';
-        filter.frequency.value = 2000;
+      }
+      
+      case 'birds': {
+        // Base nature ambience
+        const baseBuffer = createPinkNoise(context, 3);
+        const baseSource = context.createBufferSource();
+        baseSource.buffer = baseBuffer;
+        baseSource.loop = true;
+        
+        const baseLpf = context.createBiquadFilter();
+        baseLpf.type = 'lowpass';
+        baseLpf.frequency.value = 400;
+        
+        const baseGain = context.createGain();
+        baseGain.gain.value = 0.15;
+        
+        baseSource.connect(baseLpf);
+        baseLpf.connect(baseGain);
+        baseGain.connect(masterGain);
+        baseSource.start();
+        sourceNodesRef.current.push(baseSource);
+        
+        // Bird chirps using oscillators
+        const createChirp = (delay: number, freq: number) => {
+          const osc = context.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.value = freq;
+          
+          const chirpGain = context.createGain();
+          chirpGain.gain.value = 0;
+          
+          // Create chirp envelope
+          const now = context.currentTime + delay;
+          chirpGain.gain.setValueAtTime(0, now);
+          chirpGain.gain.linearRampToValueAtTime(0.08, now + 0.05);
+          chirpGain.gain.linearRampToValueAtTime(0, now + 0.15);
+          
+          osc.connect(chirpGain);
+          chirpGain.connect(masterGain);
+          osc.start(now);
+          osc.stop(now + 0.2);
+        };
+        
+        // Schedule random chirps
+        const scheduleChirps = () => {
+          if (!audioContextRef.current) return;
+          for (let i = 0; i < 20; i++) {
+            const delay = Math.random() * 8;
+            const freq = 2000 + Math.random() * 2000;
+            createChirp(delay, freq);
+          }
+          setTimeout(scheduleChirps, 8000);
+        };
+        scheduleChirps();
         break;
-      case 'cafe':
-        filter.type = 'bandpass';
-        filter.frequency.value = 800;
-        filter.Q.value = 1;
+      }
+      
+      case 'cafe': {
+        // Background chatter (filtered noise)
+        const chatterBuffer = createPinkNoise(context, 4);
+        const chatterSource = context.createBufferSource();
+        chatterSource.buffer = chatterBuffer;
+        chatterSource.loop = true;
+        
+        const bpf = context.createBiquadFilter();
+        bpf.type = 'bandpass';
+        bpf.frequency.value = 1000;
+        bpf.Q.value = 1.5;
+        
+        // Subtle volume variation
+        const lfo = context.createOscillator();
+        lfo.frequency.value = 0.3;
+        const lfoGain = context.createGain();
+        lfoGain.gain.value = 0.1;
+        lfo.connect(lfoGain);
+        lfoGain.connect(masterGain.gain);
+        lfo.start();
+        oscillatorsRef.current.push(lfo);
+        
+        chatterSource.connect(bpf);
+        bpf.connect(masterGain);
+        chatterSource.start();
+        sourceNodesRef.current.push(chatterSource);
+        
+        // Background music hint
+        const musicBuffer = createPinkNoise(context, 2);
+        const musicSource = context.createBufferSource();
+        musicSource.buffer = musicBuffer;
+        musicSource.loop = true;
+        
+        const musicLpf = context.createBiquadFilter();
+        musicLpf.type = 'lowpass';
+        musicLpf.frequency.value = 300;
+        
+        const musicGain = context.createGain();
+        musicGain.gain.value = 0.2;
+        
+        musicSource.connect(musicLpf);
+        musicLpf.connect(musicGain);
+        musicGain.connect(masterGain);
+        musicSource.start();
+        sourceNodesRef.current.push(musicSource);
         break;
-      case 'fire':
-        filter.type = 'lowpass';
-        filter.frequency.value = 600;
+      }
+      
+      case 'fire': {
+        // Crackling fire
+        const fireBuffer = createBrownNoise(context, 3);
+        const fireSource = context.createBufferSource();
+        fireSource.buffer = fireBuffer;
+        fireSource.loop = true;
+        
+        const lpf = context.createBiquadFilter();
+        lpf.type = 'lowpass';
+        lpf.frequency.value = 1200;
+        
+        // Random crackle modulation
+        const lfo = context.createOscillator();
+        lfo.type = 'sawtooth';
+        lfo.frequency.value = 8;
+        const lfoGain = context.createGain();
+        lfoGain.gain.value = 0.15;
+        lfo.connect(lfoGain);
+        lfoGain.connect(masterGain.gain);
+        lfo.start();
+        oscillatorsRef.current.push(lfo);
+        
+        fireSource.connect(lpf);
+        lpf.connect(masterGain);
+        fireSource.start();
+        sourceNodesRef.current.push(fireSource);
+        
+        // High frequency crackles
+        const crackleBuffer = createPinkNoise(context, 2);
+        const crackleSource = context.createBufferSource();
+        crackleSource.buffer = crackleBuffer;
+        crackleSource.loop = true;
+        
+        const crackleHpf = context.createBiquadFilter();
+        crackleHpf.type = 'highpass';
+        crackleHpf.frequency.value = 3000;
+        
+        const crackleGain = context.createGain();
+        crackleGain.gain.value = 0.08;
+        
+        crackleSource.connect(crackleHpf);
+        crackleHpf.connect(crackleGain);
+        crackleGain.connect(masterGain);
+        crackleSource.start();
+        sourceNodesRef.current.push(crackleSource);
         break;
+      }
     }
-
-    noiseNode.connect(filter);
-    filter.connect(gainNode);
-    gainNode.connect(context.destination);
-    noiseNode.start();
 
     setActiveSound(soundId);
     setIsPlaying(true);
-  };
-
-  const stopSound = () => {
-    if (noiseNodeRef.current) {
-      noiseNodeRef.current.stop();
-      noiseNodeRef.current = null;
-    }
-    if (oscillatorRef.current) {
-      oscillatorRef.current.stop();
-      oscillatorRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    setIsPlaying(false);
   };
 
   const togglePlay = () => {
@@ -146,7 +391,7 @@ export function AmbientSoundPlayer() {
     const newVolume = value[0];
     setVolume(newVolume);
     if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = newVolume / 100 * 0.3;
+      gainNodeRef.current.gain.value = newVolume / 100 * 0.4;
     }
   };
 
@@ -161,7 +406,7 @@ export function AmbientSoundPlayer() {
   return (
     <motion.div
       layout
-      className="fixed bottom-24 right-4 z-40"
+      className="fixed bottom-6 left-6 z-40"
     >
       <AnimatePresence>
         {isExpanded ? (
