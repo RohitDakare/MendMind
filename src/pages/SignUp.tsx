@@ -5,15 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { Sparkles, Mail, Lock, User, ArrowRight } from 'lucide-react';
-import api from '@/lib/api';
 
 export default function SignUp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+  const { signUp } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -21,11 +22,19 @@ export default function SignUp() {
     setLoading(true);
 
     try {
-      await api.post('/users', { name, email, password });
-      toast.success('Account created! Please sign in.');
-      navigate('/');
+      const { error } = await signUp(email, password, name);
+      if (error) {
+        if (error.message.includes('already registered')) {
+          toast.error('This email is already registered. Please sign in.');
+        } else {
+          toast.error(error.message || 'An error occurred');
+        }
+      } else {
+        toast.success('Account created! Check your email to confirm, or sign in if email confirmation is disabled.');
+        navigate('/auth');
+      }
     } catch (error: any) {
-      toast.error(error.response?.data?.message || 'An error occurred');
+      toast.error('An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -130,7 +139,7 @@ export default function SignUp() {
             <div className="mt-6 text-center">
               <button
                 type="button"
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/auth')}
                 className="text-sm text-muted-foreground hover:text-primary transition-colors"
               >
                 Already have an account? Sign in

@@ -113,7 +113,7 @@ export function Dashboard() {
           <div>
             <h1 className="text-2xl font-bold text-gradient">MindFlow</h1>
             <p className="text-sm text-muted-foreground">
-              Welcome, {user?.displayName || user?.email?.split('@')[0] || 'Wellness Seeker'}
+              Welcome, {user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Wellness Seeker'}
             </p>
           </div>
           <div className="flex items-center gap-2">
