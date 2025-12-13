@@ -39,7 +39,7 @@ export function MoodScanner({ onComplete }: MoodScannerProps) {
           initial={{ scale: 0.9 }}
           animate={{ scale: 1 }}
         >
-          MindFlow
+          MendMind
         </motion.h1>
         <p className="text-muted-foreground mb-8">Let's check in with how you're feeling</p>
 
