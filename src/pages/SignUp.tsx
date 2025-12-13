@@ -55,7 +55,7 @@ export default function SignUp() {
           >
             <Sparkles className="w-8 h-8 text-primary-foreground" />
           </motion.div>
-          <h1 className="text-3xl font-bold text-gradient">MindFlow</h1>
+          <h1 className="text-3xl font-bold text-gradient">MindMind</h1>
           <p className="text-muted-foreground mt-2">Your personal wellness companion</p>
         </div>
 
